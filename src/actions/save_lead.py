@@ -1,3 +1,4 @@
+from fastapi import BackgroundTasks
 from src.schemas import (
     FulfillmentResponse,
     Message,
@@ -30,11 +31,28 @@ async def save_lead(webhook_request: WebhookRequest) -> WebhookResponse:
     )
 
 
-async def save_consultation_lead(webhook_request: WebhookRequest) -> WebhookResponse:
+async def send_email_in_background(lead_data: dict):
+    """
+    Background task to send email without blocking webhook response
+    """
+    try:
+        email_sent = send_email_notification(lead_data)
+        if email_sent:
+            print("✅ SUCCESS: Email notification sent successfully!")
+        else:
+            print("⚠️ WARNING: Email notification failed, but lead was saved to Google Sheet.")
+    except Exception as e:
+        print(f"⚠️ WARNING: Email notification error (lead still saved): {e}")
+
+
+async def save_consultation_lead(webhook_request: WebhookRequest, background_tasks: BackgroundTasks = None) -> WebhookResponse:
     """
     NEW: Handles the consultation qualification flow.
     Captures business objectives, processes, tools, and challenges.
     Sends structured data to Google Sheets for manual proposal creation.
+    
+    OPTIMIZED: Email sending is now a background task (non-blocking)
+    This prevents webhook timeouts on Railway where SMTP is slow.
     
     Parameters expected from Dialogflow CX:
     - user_name: Contact name
@@ -59,19 +77,14 @@ async def save_consultation_lead(webhook_request: WebhookRequest) -> WebhookResp
         "timestamp": __import__("datetime").datetime.utcnow().isoformat()
     }
     
-    # Send to Google Apps Script
+    # Send to Google Apps Script (SYNCHRONOUS - fast)
     success = send_consultation_lead_to_webhook(lead_data)
     
-    # Send email notification (optional - won't crash if it fails)
-    if success:
-        try:
-            email_sent = send_email_notification(lead_data)
-            if email_sent:
-                print("✅ SUCCESS: Email notification sent successfully!")
-            else:
-                print("⚠️ WARNING: Email notification failed, but lead was saved to Google Sheet.")
-        except Exception as e:
-            print(f"⚠️ WARNING: Email notification error (lead still saved): {e}")
+    # Send email notification in BACKGROUND (non-blocking)
+    # This prevents Dialogflow timeouts on Railway
+    if success and background_tasks:
+        background_tasks.add_task(send_email_in_background, lead_data)
+        print("📧 Email notification scheduled in background (non-blocking)")
     
     # Select bilingual response
     response_key = "consultation_saved" if success else "consultation_error"

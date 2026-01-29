@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -28,7 +28,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.post("/webhook", response_model=WebhookResponse)
 async def dialogflow_webhook(
-    webhook_request: WebhookRequest
+    webhook_request: WebhookRequest,
+    background_tasks: BackgroundTasks
 ):
     logger.info("A new request came from Dialogflow.")
     # logger.info(webhook_request) # Commented out to reduce noise, enable if debugging needed
@@ -40,7 +41,7 @@ async def dialogflow_webhook(
         elif tag == "save_lead":
             return await save_lead(webhook_request=webhook_request)
         elif tag == "save_consultation_lead":
-            return await save_consultation_lead(webhook_request=webhook_request)
+            return await save_consultation_lead(webhook_request=webhook_request, background_tasks=background_tasks)
         else:
             return WebhookResponse(
                 fulfillmentResponse=FulfillmentResponse(
